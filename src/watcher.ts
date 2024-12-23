@@ -1,9 +1,9 @@
-import { Type } from 'gamedig';
-import { Low, JSONFile } from '@commonify/lowdb';
-import { GameServer, initDb, saveDb } from './game-server';
-import * as discordBot from './discord-bot';
-import * as telegramBot from './telegram-bot';
-import * as slackBot from './slack-bot';
+import fs from 'node:fs';
+import { JSONPreset } from 'lowdb/node';
+import { GameServer, initPopulationDb, savePopulationDb } from './game-server.js';
+import * as discordBot from './discord-bot.js';
+import * as telegramBot from './telegram-bot.js';
+import * as slackBot from './slack-bot.js';
 
 const REFRESH_TIME_MINUTES = parseInt(process.env.REFRESH_TIME_MINUTES || '2', 10);
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || '';
@@ -13,16 +13,24 @@ const SLACK_APP_TOKEN = process.env.SLACK_APP_TOKEN || '';
 const DATA_PATH = process.env.DATA_PATH || './data/';
 const DBG = Boolean(Number(process.env.DBG));
 
-interface DiscordConfig {
+export interface DiscordConfig {
     channelId: string;
+    showPlayersList?: boolean;
+    onlineColor?: string;
+    offlineColor?: string;
+    showGraph?: boolean;
 }
 
-interface TelegramConfig {
+export interface TelegramConfig {
     chatId: string;
+    showPlayersList?: boolean;
+    showGraph?: boolean;
 }
 
-interface SlackConfig {
+export interface SlackConfig {
     channelId: string;
+    showPlayersList?: boolean;
+    showGraph?: boolean;
 }
 
 export interface GameServerConfig {
@@ -31,33 +39,38 @@ export interface GameServerConfig {
     updateIntervalMinutes?: number;//5
     graphHistoryHours?: number;//12
     timezoneOffset?: number;//0
+    infoText?: string;
     discord?: DiscordConfig[];
     telegram?: TelegramConfig[];
     slack?: SlackConfig[];
-
     // node-gamedig stuff
-    type: Type;
+    type: string;
     host: string;
     port: number;
     givenPortOnly?: boolean;
+    // Valve
     requestRules?: boolean;
-    // * Discord
+    requestRulesRequired?: boolean;
+    requestPlayersRequired?: boolean;
+    // Discord
     guildId?: string;
-    // * Nadeo
+    // Nadeo
     login?: string;
+    // Nadeo / Palworld
     password?: string;
-    // * Teamspeak 3
+    // Teamspeak 3
     teamspeakQueryPort?: number;
-    // * Terraria
+    // Terraria
     token?: string;
+    // Palworld
+    username?: string;
 }
 
-const adapter = new JSONFile<GameServerConfig[]>(DATA_PATH + 'default.config.json');
-const db = new Low<GameServerConfig[]>(adapter);
+const db = await JSONPreset<GameServerConfig[]>(DATA_PATH + 'default.config.json', []);
 
 export async function readConfig(): Promise<GameServerConfig[]> {
     await db.read();
-    return db.data || [];
+    return db.data;
 }
 
 export async function updateConfig(data: GameServerConfig[]) {
@@ -69,23 +82,9 @@ export async function updateConfig(data: GameServerConfig[]) {
     }
 }
 
-class Watcher {
+export class Watcher {
     private servers: GameServer[] = [];
-
-    async init(config: GameServerConfig[]) {
-        console.log('watcher starting...');
-
-        if (DISCORD_BOT_TOKEN) await discordBot.init(DISCORD_BOT_TOKEN);
-        if (TELEGRAM_BOT_TOKEN) await telegramBot.init(TELEGRAM_BOT_TOKEN);
-        if (SLACK_BOT_TOKEN && SLACK_APP_TOKEN) await slackBot.init(SLACK_BOT_TOKEN, SLACK_APP_TOKEN);
-
-        await initDb();
-
-        for (const c of config) {
-            const gs = new GameServer(c);
-            this.servers.push(gs);
-        }
-    }
+    public loop?: NodeJS.Timer;
 
     async check() {
         if (DBG) console.log('watcher checking...');
@@ -100,22 +99,51 @@ class Watcher {
         }
 
         await Promise.allSettled(promises);
-        await saveDb();
+        await savePopulationDb();
     }
-}
 
-export async function main() {
-    await db.read();
-    db.data = db.data || [];
+    async start() {
+        console.log('watcher starting...');
 
-    const watcher = new Watcher();
-    await watcher.init(db.data);
+        if (DISCORD_BOT_TOKEN) await discordBot.init(DISCORD_BOT_TOKEN);
+        if (TELEGRAM_BOT_TOKEN) await telegramBot.init(TELEGRAM_BOT_TOKEN);
+        if (SLACK_BOT_TOKEN && SLACK_APP_TOKEN) await slackBot.init(SLACK_BOT_TOKEN, SLACK_APP_TOKEN);
+        await initPopulationDb();
 
-    console.log('starting loop...'); // Note: pterodactyl depends on this
-    const loop = setInterval(async () => {
-        await watcher.check();
-    }, 1000 * 60 * REFRESH_TIME_MINUTES);
-    await watcher.check();
+        await db.read();
+        this.servers.length = 0;
+        for (const c of db.data) {
+            const gs = new GameServer(c);
+            this.servers.push(gs);
+        }
 
-    return loop;
+        console.log('starting loop...'); // Note: pterodactyl depends on this
+        this.loop = setInterval(async () => {
+            await this.check();
+        }, 1000 * 60 * REFRESH_TIME_MINUTES);
+
+        await this.check();
+    }
+
+    async restart(flush?: string, host?: string, port?: number) {
+        if (DBG) console.log('stopping loop');
+
+        if (this.loop) {
+            clearInterval(this.loop);
+            this.loop = undefined;
+        }
+
+        if (flush) {
+            if (!host) {
+                if (DBG) console.log('deleting ' + flush + ' data');
+                try {
+                    fs.unlinkSync(DATA_PATH + flush + '.json');
+                } catch (e) { }
+            } else {
+                //TODO: filter by host, or if port is specified then both
+            }
+        }
+
+        await this.start();
+    }
 }

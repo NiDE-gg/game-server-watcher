@@ -1,8 +1,10 @@
-import { App, Block, KnownBlock, LogLevel, MrkdwnElement, PlainTextElement } from '@slack/bolt';
-import { Low, JSONFile } from '@commonify/lowdb';
-import { GameServer } from './game-server';
-import hhmmss from './lib/hhmmss';
-import getConnectUrl from './lib/connect-url';
+import { App as AppType, Block, KnownBlock, MrkdwnElement, PlainTextElement } from '@slack/bolt';
+import bolt from '@slack/bolt';
+import { JSONPreset } from 'lowdb/node';
+import { GameServer } from './game-server.js';
+import hhmmss from './lib/hhmmss.js';
+import { SlackConfig } from './watcher.js';
+import * as ip from 'neoip';
 
 const DATA_PATH = process.env.DATA_PATH || './data/';
 const DBG = Boolean(Number(process.env.DBG));
@@ -14,52 +16,54 @@ interface SlackData {
     messageId: string;
 }
 
-const adapter = new JSONFile<SlackData[]>(DATA_PATH + 'slack.json');
-const db = new Low<SlackData[]>(adapter);
+const db = await JSONPreset<SlackData[]>(DATA_PATH + 'slack.json', []);
 
 const serverInfoMessages: ServerInfoMessage[] = [];
 
-let bot: App;
+let bot: AppType;
 export async function init(token: string, appToken: string) {
     if (!bot) {
         console.log('slack-bot starting...');
-        bot = new App({
-            token,
-            appToken,
-            socketMode: true,
-            logLevel: LogLevel.ERROR
-        });
-
-        if (DBG) {
-            bot.message('ping', async ({ message, say }) => {
-                // Handle only newly posted messages here
-                if (message.subtype === undefined
-                    || message.subtype === 'bot_message'
-                    || message.subtype === 'file_share'
-                    || message.subtype === 'thread_broadcast') {
-                    await say(`<@${message.user}> pong`);
-                }
+        try {
+            bot = new bolt.App({
+                token,
+                appToken,
+                socketMode: true,
+                logLevel: bolt.LogLevel.ERROR
             });
-        }
 
-        await bot.start();
+            if (DBG) {
+                bot.message('ping', async ({ message, say }) => {
+                    // Handle only newly posted messages here
+                    if (message.subtype === undefined
+                        || message.subtype === 'bot_message'
+                        || message.subtype === 'file_share'
+                        || message.subtype === 'thread_broadcast') {
+                        await say(`<@${message.user}> pong`);
+                    }
+                });
+            }
+
+            await bot.start();
+        } catch (e: any) {
+            console.error('slack-bot init ERROR', e.message || e);
+        }
     }
 
     serverInfoMessages.length = 0;
     await db.read();
-    db.data = db.data || [];
 }
 
 export async function serverUpdate(gs: GameServer) {
     if (DBG) console.log('slack.serverUpdate', gs.config.host, gs.config.port, gs.config.slack);
 
     if (gs.config.slack) {
-        for (const ch of gs.config.slack) {
+        for (const conf of gs.config.slack) {
             try {
-                let m = await getServerInfoMessage(ch.channelId, gs.config.host, gs.config.port);
-                await m.updatePost(gs);
+                let m = await getServerInfoMessage(conf.channelId, gs.config.host, gs.config.port);
+                await m.updatePost(gs, conf);
             } catch (e: any) {
-                console.error(['slack-bot.sup', ch.channelId, gs.config.host, gs.config.port].join(':'), e.message || e);
+                console.error(['slack-bot.sup', conf.channelId, gs.config.host, gs.config.port].join(':'), e.message || e);
             }
         }
     }
@@ -138,12 +142,15 @@ class ServerInfoMessage {
         }
     }
 
-    async updatePost(gs: GameServer) {
+    async updatePost(gs: GameServer, conf: SlackConfig) {
+        const showPlayersList = Boolean(conf.showPlayersList);
+        const showGraph = Boolean(conf.showGraph);
+
         const blocks: (KnownBlock | Block)[] = [];
         const fields1: (PlainTextElement | MrkdwnElement)[] = [];
         const fields2: (PlainTextElement | MrkdwnElement)[] = [];
-        let text;
 
+        let text;
         if (gs.info && gs.online) {
             text = this.escapeMarkdown(gs.niceName);
 
@@ -181,17 +188,20 @@ class ServerInfoMessage {
                 });
             }
 
-            text += '\r\nPlayers: ' + gs.info.playersNum;
+            text += '\r\nPlayers: ' + String(gs.info.playersNum);
             fields2.push({
                 type: 'mrkdwn',
                 text: '*Players*  \r\n' + String(gs.info.playersNum + '/' + gs.info.playersMax)
             });
 
-            text += '\r\nConnect: ' + getConnectUrl(gs.info.connect);
-            fields2.push({
-                type: 'mrkdwn',
-                text: '*Connect*  \r\n' + getConnectUrl(gs.info.connect)
-            });
+            const connectIp = gs.info.connect.split(':')[0];
+            if (!ip.isPrivate(connectIp)) {
+                text += '\r\nAddress: ' + String(gs.info.connect);
+                fields2.push({
+                    type: 'mrkdwn',
+                    text: '*Address*  \r\n' + String(gs.info.connect)
+                });
+            }
 
             if (fields2.length > 0) {
                 blocks.push({
@@ -200,7 +210,18 @@ class ServerInfoMessage {
                 });
             }
 
-            if (gs.info?.players.length > 0) {
+            if (gs.config.infoText) {
+                text += '\r\nInfo:\r\n' + String(gs.config.infoText).slice(0, 1024);
+                blocks.push({
+                    type: 'section',
+                    fields: [{
+                        type: 'mrkdwn',
+                        text: '*Info* \r\n' + String(gs.config.infoText).slice(0, 1024)
+                    }]
+                });
+            }
+
+            if (showPlayersList && gs.info?.players.length > 0) {
                 const pNames: string[] = [];
                 for (const p of gs.info?.players) {
                     if (pNames.join('\n').length > 2992) { // Note: max length 3000 - wrapper
@@ -212,6 +233,7 @@ class ServerInfoMessage {
                     if (p.get('time') !== undefined) line.push(hhmmss(p.get('time') || 0));
                     if (p.get('name') !== undefined) line.push(p.get('name') || 'n/a');
                     if (p.get('score') !== undefined) line.push('(' + (p.get('score') || '0') + ')');
+                    else if (p.get('frags') !== undefined) line.push('(' + (p.get('frags') || '0') + ')');
 
                     pNames.push(line.join(' '));
                 }
@@ -237,17 +259,19 @@ class ServerInfoMessage {
             });
         }
 
-        const unixTimestamp = Math.floor(+new Date() / 1000);
-        blocks.push({
-            type: 'image',
-            image_url: gs.history.statsChart(),
-            alt_text: 'Player numbers chart',
-            title: {
-                type: 'plain_text',
-                text: `📈`
-            }
-        });
+        if (showGraph) {
+            blocks.push({
+                type: 'image',
+                image_url: gs.history.statsChart(),
+                alt_text: 'Player numbers chart',
+                title: {
+                    type: 'plain_text',
+                    text: `📈`
+                }
+            });
+        }
 
+        const unixTimestamp = Math.floor(+new Date() / 1000);
         // text += ' Last updated at ' + new Date().toLocaleString();
         blocks.push({
             "type": "context",

@@ -1,9 +1,9 @@
 import axios from 'axios';
-import { Player, query, QueryResult, Type } from 'gamedig';
-import { Low, JSONFile } from '@commonify/lowdb';
-import ipRegex from './lib/ipregex';
-import getIP from './lib/getip';
-import { GameServerConfig } from './watcher';
+import { GameDig, Player, QueryOptions } from 'gamedig';
+import { JSONPreset } from 'lowdb/node';
+import * as ip from 'neoip';
+import getIP from './lib/getip.js';
+import { GameServerConfig } from './watcher.js';
 
 const STEAM_WEB_API_KEY = process.env.STEAM_WEB_API_KEY || '';
 const DATA_PATH = process.env.DATA_PATH || './data/';
@@ -15,21 +15,17 @@ interface GameServerDb {
     }
 }
 
-const adapter = new JSONFile<GameServerDb>(DATA_PATH + 'servers.json');
-const db = new Low<GameServerDb>(adapter);
+const db = await JSONPreset<GameServerDb>(DATA_PATH + 'servers.json', { population: {} });
 
-export async function initDb() {
+export async function initPopulationDb() {
     await db.read();
-    db.data = db.data || {
-        population: {}
-    };
 }
 
-export async function saveDb() {
+export async function savePopulationDb() {
     try {
         return await db.write();
     } catch (e: any) {
-        console.error('gs.saveDb', e.message || e);
+        console.error('gs.savePopulationDb', e.message || e);
     }
 }
 
@@ -38,36 +34,16 @@ export interface Info {
     name: string;
     game: string;
     map: string;
+    password: boolean;
     playersNum: number;
     playersMax: number;
     players: GsPlayer[];
-}
-
-interface qRes extends QueryResult {
-    game: string;
-    numplayers: number;
-}
-
-export interface QueryOptions {
-    type: Type;
-    host: string;
-    port: number;
-    maxAttempts?: number;
-    socketTimeout?: number;
-    attemptTimeout?: number;
-    givenPortOnly?: boolean;
-    ipfamily?: 0 | 4 | 6 | undefined;
-    debug?: boolean;
-    requestRules?: boolean;
-    // Discord
-    guildId?: string;
-    // Nadeo
-    login?: string;
-    password?: string;
-    // Teamspeak 3
-    teamspeakQueryPort?: number;
-    // Terraria
-    token?: string;
+    ping: number;
+    queryPort: number;
+    version: string;
+    raw?: {
+        [key: string]: any;
+    };
 }
 
 export class GameServer {
@@ -83,7 +59,7 @@ export class GameServer {
         this.ip = '0.0.0.0';
         this.config = config;
         this.history = new ServerHistory(config.host + ':' + config.port, config.graphHistoryHours, config.timezoneOffset);
-        this._niceName = config.host + ':' + config.port;
+        this._niceName = String(config.name) || config.host + ':' + config.port;
     }
 
     async update() {
@@ -115,34 +91,47 @@ export class GameServer {
 
     async gamedig(): Promise<Info | null> {
         try {
-            const res = await query({
+            const res = await GameDig.query({
                 type: this.config.type,
                 host: this.config.host,
                 port: this.config.port,
                 givenPortOnly: this.config.givenPortOnly,
                 requestRules: this.config.requestRules,
+                requestRulesRequired: this.config.requestRulesRequired,
+                requestPlayersRequired: this.config.requestPlayersRequired,
                 guildId: this.config.guildId,
                 login: this.config.login,
                 password: this.config.password,
                 teamspeakQueryPort: this.config.teamspeakQueryPort,
-                token: this.config.token
-            } as QueryOptions) as qRes;
+                token: this.config.token,
+                username: this.config.username
+            } as QueryOptions);
 
-            const raw = res.raw as { game: string; folder: string; };
-            const game = raw.game || raw.folder || this.config.type;
+            const raw = res.raw as { game?: string; folder?: string; presence_count?: number; };
+            const game = raw?.game || raw?.folder || this.config.type;
 
             const players: GsPlayer[] = res.players.map((p: Player) => {
                 return new GsPlayer(p);
             });
+
+            const playersNum = res.bots.length ? 
+                Number(res.players.length || res.numplayers || raw?.presence_count)
+                :
+                Number(res.numplayers || raw?.presence_count || res.players.length);
 
             return {
                 connect: res.connect,
                 name: res.name,
                 game: game,
                 map: res.map || '',
-                playersNum: res.numplayers || res.players.length,
+                password: res.password,
+                playersNum,
                 playersMax: res.maxplayers,
-                players
+                players,
+                ping: res.ping,
+                queryPort: res.queryPort,
+                version: res.version,
+                raw
             };
         } catch (e: any) {
             console.error(['gs.gamedig', this.config.host, this.config.port].join(':'), e.message || e);
@@ -162,14 +151,28 @@ export class GameServer {
             if (Array.isArray(data.response.servers)) {
                 const matching = data.response.servers.find((s: any) => s.gameport === this.config.port);
                 if (matching) {
+                    const queryAddr = matching.addr.split(':');
+                    const queryHost = queryAddr[0];
+                    const queryPort = queryAddr[1];
                     return {
-                        connect: matching.addr,
+                        connect: `${queryHost}:${matching.gameport}`,
                         name: matching.name,
                         game: matching.gamedir,
                         map: matching.map,
+                        password: matching.secure,
                         playersNum: matching.players,
                         playersMax: matching.max_players,
-                        players: []
+                        players: [],
+                        ping: 0,
+                        queryPort,
+                        version: matching.version,
+                        raw: {
+                            steamid: matching.steamid,
+                            product: matching.product,
+                            dedicated: matching.dedicated,
+                            os: matching.os,
+                            gametype: matching.gametype,
+                        }
                     }
                 }
             }
@@ -202,7 +205,7 @@ export class GameServer {
 
     async getIp() {
         if (this.ip === '0.0.0.0') {
-            if (ipRegex.test(this.config.host)) {
+            if (ip.isV4Format(this.config.host) || ip.isV6Format(this.config.host)) {
                 this.ip = this.config.host;
             } else {
                 this.ip = await getIP(this.config.host) || '0.0.0.0';
@@ -270,6 +273,7 @@ class ServerHistory {
     }
 
     formatHour(h: number): string {
+        // return String(h).padStart(2, '0'); // 24 hour format
         const ampm = (h >= 12) ? 'pm' : 'am';
         const hours = (h > 12) ? h - 12 : h;
         return hours + ampm;

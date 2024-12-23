@@ -135,7 +135,12 @@ body>nav {
     padding-left: 5px !important;
 }
 
-footer>a>svg {
+#config-form td[data-schematype="boolean"] > div.form-group > input[type="checkbox"] {
+    transform: scale(2.5);
+    margin: 10px 0 0 10px;
+}
+
+footer > p > a > svg {
     fill: #c6cbd1;
 }
 
@@ -173,4 +178,9 @@ footer>a>svg {
 
 #bye kbd {
     box-shadow: 0 0.125rem 0.25rem rgb(255, 255, 255, 0.75) !important;
+}
+
+#versions {
+    color: #fff;
+    text-shadow: 0 0 3px #fff;
 }

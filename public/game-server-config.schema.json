@@ -17,13 +17,14 @@
             }
         },
         "type": {
-            "title": "Gamedig type",
-            "description": "Look for the <i>GameDig Type ID</i> in the <a href=\"https://github.com/gamedig/node-gamedig#games-list\">games list</a>.",
+            "title": "GameDig type",
+            "description": "Check the <a href=\"https://github.com/gamedig/node-gamedig/blob/master/GAMES_LIST.md\">GameDig games list</a> for requirements.",
             "type": "string",
             "minLength": 1,
             "options": {
                 "grid_columns": 3
-            }
+            },
+            "$ref": "gamedig-games"
         },
         "host": {
             "title": "Host name or IP",
@@ -74,6 +75,30 @@
                     "channelId": {
                         "title": "Channel ID",
                         "type": "string"
+                    },
+                    "showPlayersList": {
+                        "title": "Show players list",
+                        "default": true,
+                        "type": "boolean",
+                        "format": "checkbox"
+                    },
+                    "showGraph": {
+                        "title": "Show graph",
+                        "default": true,
+                        "type": "boolean",
+                        "format": "checkbox"
+                    },
+                    "onlineColor": {
+                        "title": "Online color",
+                        "default": "#000000",
+                        "type": "string",
+                        "format": "color"
+                    },
+                    "offlineColor": {
+                        "title": "Offline color",
+                        "default": "#ff0000",
+                        "type": "string",
+                        "format": "color"
                     }
                 }
             },
@@ -98,6 +123,18 @@
                     "chatId": {
                         "type": "string",
                         "title": "Chat ID"
+                    },
+                    "showPlayersList": {
+                        "title": "Show players list",
+                        "default": true,
+                        "type": "boolean",
+                        "format": "checkbox"
+                    },
+                    "showGraph": {
+                        "title": "Show graph",
+                        "default": true,
+                        "type": "boolean",
+                        "format": "checkbox"
                     }
                 }
             },
@@ -122,6 +159,18 @@
                     "channelId": {
                         "title": "Channel ID",
                         "type": "string"
+                    },
+                    "showPlayersList": {
+                        "title": "Show players list",
+                        "default": true,
+                        "type": "boolean",
+                        "format": "checkbox"
+                    },
+                    "showGraph": {
+                        "title": "Show graph",
+                        "default": true,
+                        "type": "boolean",
+                        "format": "checkbox"
                     }
                 }
             },
@@ -152,10 +201,38 @@
                 "grid_columns": 12
             }
         },
+        "infoText": {
+            "title": "Info text",
+            "type": "string",
+            "format": "markdown",
+            "options": {
+                "simplemde": {
+                    "autorefresh": true,
+                    "spellChecker": false,
+                    "toolbar": [
+                        "bold",
+                        "italic",
+                        "strikethrough",
+                        "|",
+                        "unordered-list",
+                        "ordered-list",
+                        "|",
+                        "code",
+                        "link",
+                        "quote",
+                        "|",
+                        "preview",
+                        "side-by-side",
+                        "fullscreen"
+                      ]
+                }
+            }
+        },
         "givenPortOnly": {
             "title": "givenPortOnly",
             "description": "Only attempt to query server on given port.",
             "type": "boolean",
+            "format": "checkbox",
             "options": {
                 "grid_columns": 3
             }
@@ -164,6 +241,25 @@
             "title": "requestRules (Valve)",
             "description": "Additional server info may be fetched into the <code>raw</code> field.",
             "type": "boolean",
+            "format": "checkbox",
+            "options": {
+                "grid_columns": 3
+            }
+        },
+        "requestRulesRequired": {
+            "title": "requestRulesRequired (Valve)",
+            "description": "<code>requestRules</code> is always required to have a response or the query will timeout.",
+            "type": "boolean",
+            "format": "checkbox",
+            "options": {
+                "grid_columns": 3
+            }
+        },
+        "requestPlayersRequired": {
+            "title": "requestPlayersRequired (Valve)",
+            "description": "Querying players is always required to have a response or the query will timeout. Some <a href=\"https://github.com/gamedig/node-gamedig/blob/master/GAMES_LIST.md\">games</a> may not provide a players response.",
+            "type": "boolean",
+            "format": "checkbox",
             "options": {
                 "grid_columns": 3
             }
@@ -193,7 +289,7 @@
             }
         },
         "password": {
-            "title": "password (Nadeo)",
+            "title": "password (Nadeo / Palworld)",
             "type": "string",
             "options": {
                 "grid_columns": 3
@@ -201,6 +297,13 @@
         },
         "token": {
             "title": "token (Terraria)",
+            "type": "string",
+            "options": {
+                "grid_columns": 3
+            }
+        },
+        "username": {
+            "title": "username (Palworld)",
             "type": "string",
             "options": {
                 "grid_columns": 3

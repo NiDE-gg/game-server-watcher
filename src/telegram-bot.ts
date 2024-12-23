@@ -1,8 +1,9 @@
 import { Bot } from 'grammy';
-import { Low, JSONFile } from '@commonify/lowdb';
-import { GameServer } from './game-server';
-import hhmmss from './lib/hhmmss';
-import getConnectUrl from './lib/connect-url';
+import { JSONPreset } from 'lowdb/node';
+import { GameServer } from './game-server.js';
+import hhmmss from './lib/hhmmss.js';
+import { TelegramConfig } from './watcher.js';
+import * as ip from 'neoip';
 
 const DATA_PATH = process.env.DATA_PATH || './data/';
 const DBG = Boolean(Number(process.env.DBG));
@@ -14,8 +15,7 @@ interface TelegramData {
     messageId: number;
 }
 
-const adapter = new JSONFile<TelegramData[]>(DATA_PATH + 'telegram.json');
-const db = new Low<TelegramData[]>(adapter);
+const db = await JSONPreset<TelegramData[]>(DATA_PATH + 'telegram.json', []);
 
 const serverInfoMessages: ServerInfoMessage[] = [];
 
@@ -23,28 +23,31 @@ let bot: Bot;
 export async function init(token: string) {
     if (!bot) {
         console.log('telegram-bot starting...');
-        bot = new Bot(token);
+        try {
+            bot = new Bot(token);
 
-        bot.catch(e => {
-            console.error('telegram-bot ERROR', e.message || e);
-        });
-
-        const me = await bot.api.getMe();
-        console.log('telegram-bot ready', me);
-
-        if (DBG) {
-            bot.on('message:text', ctx => {
-                if (ctx.message.text === 'ping')
-                    ctx.reply('pong');
+            bot.catch(e => {
+                console.error('telegram-bot ERROR', e.message || e);
             });
-            // bot.command('ping', ctx => ctx.reply('/pong'));
-            bot.start();
+
+            const me = await bot.api.getMe();
+            console.log('telegram-bot ready', me);
+
+            if (DBG) {
+                bot.on('message:text', ctx => {
+                    if (ctx.message.text === 'ping')
+                        ctx.reply('pong');
+                });
+                // bot.command('ping', ctx => ctx.reply('/pong'));
+                bot.start();
+            }
+        } catch (e: any) {
+            console.error('telegram-bot init ERROR', e.message || e);
         }
     }
 
     serverInfoMessages.length = 0;
     await db.read();
-    db.data = db.data || [];
 }
 
 async function getServerInfoMessage(cid: string, host: string, port: number) {
@@ -75,12 +78,12 @@ export async function serverUpdate(gs: GameServer) {
     if (DBG) console.log('telegram.serverUpdate', gs.config.host, gs.config.port, gs.config.telegram);
 
     if (gs.config.telegram) {
-        for (const ch of gs.config.telegram) {
+        for (const conf of gs.config.telegram) {
             try {
-                let m = await getServerInfoMessage(ch.chatId, gs.config.host, gs.config.port);
-                await m.updatePost(gs);
+                let m = await getServerInfoMessage(conf.chatId, gs.config.host, gs.config.port);
+                await m.updatePost(gs, conf);
             } catch (e: any) {
-                console.error(['telegram-bot.sup', ch.chatId, gs.config.host, gs.config.port].join(':'), e.message || e);
+                console.error(['telegram-bot.sup', conf.chatId, gs.config.host, gs.config.port].join(':'), e.message || e);
             }
         }
     }
@@ -127,25 +130,35 @@ class ServerInfoMessage {
         }
     }
 
-    async updatePost(gs: GameServer) {
-        const chart = '[📈](' + gs.history.statsChart() + ')';
+    async updatePost(gs: GameServer, conf: TelegramConfig) {
+        const showPlayersList = Boolean(conf.showPlayersList);
+        const showGraph = Boolean(conf.showGraph);
+
+        const chart = showGraph ? '[📈](' + gs.history.statsChart() + ')' : '';
         let infoText = this.escapeMarkdown(gs.niceName) + ' offline...';
 
         if (gs.info && gs.online) {
-            infoText = [
+            const infoBlocks = [
                 this.escapeMarkdown(gs.niceName),
-                this.escapeMarkdown(gs.info.game) + ' / ' + this.escapeMarkdown(gs.info.map),
-                getConnectUrl(gs.info.connect),
-                'Players ' + gs.info.playersNum + '/' + gs.info.playersMax
-            ].join('\n');
+                this.escapeMarkdown(gs.info.game) + ' / ' + this.escapeMarkdown(gs.info.map)
+            ];
 
-            if (gs.info.players.length > 0) {
+            const connectIp = gs.info.connect.split(':')[0];
+            if (!ip.isPrivate(connectIp)) infoBlocks.push(this.escapeMarkdown(gs.info.connect));
+
+            infoBlocks.push('Players ' + gs.info.playersNum + '/' + gs.info.playersMax);
+            infoText = infoBlocks.join('\n');
+
+            if (gs.config.infoText) infoText += 'Info:\n' + String(gs.config.infoText).slice(0, 1024) + '\n';
+
+            if (showPlayersList && gs.info.players.length > 0) {
                 const pnArr: string[] = [];
                 for (const p of gs.info.players) {
                     let playerLine = '';
                     if (p.get('time') !== undefined) playerLine += hhmmss(p.get('time') || '0') + ' ';
                     if (p.get('name') !== undefined) playerLine += p.get('name') || 'n/a';
                     if (p.get('score') !== undefined) playerLine += ' (' + (p.get('score') || 0) + ')';
+                    else if (p.get('frags') !== undefined) playerLine += ' (' + (p.get('frags') || 0) + ')';
                     pnArr.push(playerLine);
                 }
 
@@ -154,6 +167,7 @@ class ServerInfoMessage {
                 }
             }
         }
+
         infoText += chart;
 
         try {

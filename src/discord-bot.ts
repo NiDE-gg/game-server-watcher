@@ -1,8 +1,9 @@
-import { Client, GatewayIntentBits, TextChannel, Message, EmbedBuilder, APIEmbedField } from 'discord.js';
-import { Low, JSONFile } from '@commonify/lowdb';
-import { GameServer } from './game-server';
-import hhmmss from './lib/hhmmss';
-import getConnectUrl from './lib/connect-url';
+import { Client, GatewayIntentBits, TextChannel, Message, EmbedBuilder, APIEmbedField, HexColorString } from 'discord.js';
+import { JSONPreset } from 'lowdb/node';
+import { GameServer } from './game-server.js';
+import hhmmss from './lib/hhmmss.js';
+import { DiscordConfig } from './watcher.js';
+import * as ip from 'neoip';
 
 const DATA_PATH = process.env.DATA_PATH || './data/';
 const DBG = Boolean(Number(process.env.DBG));
@@ -14,8 +15,7 @@ interface DiscordData {
     messageId: string;
 }
 
-const adapter = new JSONFile<DiscordData[]>(DATA_PATH + 'discord.json');
-const db = new Low<DiscordData[]>(adapter);
+const db = await JSONPreset<DiscordData[]>(DATA_PATH + 'discord.json', []);
 
 const serverInfoMessages: ServerInfoMessage[] = [];
 
@@ -23,51 +23,54 @@ let bot: Client;
 export async function init(token: string) {
     if (!bot) {
         console.log('discord-bot starting...');
-        bot = new Client({
-            intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
-        });
-
-        bot.on('error', e => {
-            console.error('discord-bot ERROR', e.message || e);
-        });
-
-        await new Promise<void>((resolve, reject) => {
-            bot.once('ready', () => {
-                console.log('discord-bot ready', bot.user);
-
-                bot.removeListener('error', reject);
-                resolve();
+        try {
+            bot = new Client({
+                intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
             });
 
-            bot.once('error', reject);
+            bot.on('error', e => {
+                console.error('discord-bot ERROR', e.message || e);
+            });
 
-            if (DBG) {
-                bot.on('messageCreate', msg => {
-                    if (msg.content === 'ping') {
-                        msg.reply('pong');
-                    }
+            await new Promise<void>((resolve, reject) => {
+                bot.once('ready', () => {
+                    console.log('discord-bot ready', bot.user);
+
+                    bot.off('error', reject);
+                    resolve();
                 });
-            }
 
-            return bot.login(token);
-        });
+                bot.once('error', reject);
+
+                if (DBG) {
+                    bot.on('messageCreate', msg => {
+                        if (msg.content === 'ping') {
+                            msg.reply('pong');
+                        }
+                    });
+                }
+
+                return bot.login(token);
+            });
+        } catch (e: any) {
+            console.error('discord-bot init ERROR', e.message || e);
+        }
     }
 
     serverInfoMessages.length = 0;
     await db.read();
-    db.data = db.data || [];
 }
 
 export async function serverUpdate(gs: GameServer) {
     if (DBG) console.log('discord.serverUpdate', gs.config.host, gs.config.port, gs.config.discord);
 
     if (gs.config.discord) {
-        for (const ch of gs.config.discord) {
+        for (const conf of gs.config.discord) {
             try {
-                let m = await getServerInfoMessage(ch.channelId, gs.config.host, gs.config.port);
-                await m.updatePost(gs);
+                let m = await getServerInfoMessage(conf.channelId, gs.config.host, gs.config.port);
+                await m.updatePost(gs, conf);
             } catch (e: any) {
-                console.error(['discord-bot.sup', ch.channelId, gs.config.host, gs.config.port].join(':'), e.message || e);
+                console.error(['discord-bot.sup', conf.channelId, gs.config.host, gs.config.port].join(':'), e.message || e);
             }
         }
     }
@@ -126,7 +129,7 @@ class ServerInfoMessage {
         if (!msgId || !this.message) {
             let embed = new EmbedBuilder();
             embed.setTitle('Initializing server info... ' + (new Date()).toISOString());
-            embed.setColor('#00ff00');
+            // embed.setColor('#00ff00');
 
             this.message = await this.channel.send({ embeds: [embed] });
             this.messageId = this.message.id;
@@ -154,35 +157,47 @@ class ServerInfoMessage {
         }
     }
 
-    async updatePost(gs: GameServer) {
+    async updatePost(gs: GameServer, conf: DiscordConfig) {
         if (!this.message) return;
 
         const embed = new EmbedBuilder();
         const fields: APIEmbedField[] = [];
         embed.setFooter({ text: 'Last updated' });
         embed.setTimestamp();
-        embed.setImage(gs.history.statsChart());
+
+        const onlineColor = conf.onlineColor || '#000000';
+        const offlineColor = conf.offlineColor || '#FF0000';
+        const showPlayersList = Boolean(conf.showPlayersList);
+        const showGraph = Boolean(conf.showGraph);
+
+        if (showGraph) {
+            embed.setImage(gs.history.statsChart());
+        }
 
         if (gs.info && gs.online) {
             embed.setTitle(gs.niceName.slice(0, 256));
-            embed.setColor('#000000');
+            embed.setColor(onlineColor as HexColorString);
 
-            if (gs.info.game) fields.push({ name: 'Game', value: String(gs.info.game), inline: true});
-            if (gs.info.map) fields.push({ name: 'Map', value: String(gs.info.map), inline: true});
-            fields.push({ name: 'Players', value: gs.info.playersNum + '/' + gs.info.playersMax, inline: true});
-            fields.push({ name: 'Connect', value: getConnectUrl(gs.info.connect)});
+            if (gs.info.game) fields.push({ name: 'Game', value: String(gs.info.game), inline: true });
+            if (gs.info.map) fields.push({ name: 'Map', value: String(gs.info.map), inline: true });
+            fields.push({ name: 'Players', value: String(gs.info.playersNum + '/' + gs.info.playersMax), inline: true });
 
-            if (gs.info?.players.length > 0) {
+            const connectIp = gs.info.connect.split(':')[0];
+            if (!ip.isPrivate(connectIp)) fields.push({ name: 'Address', value: String(gs.info.connect) });
+
+            if (gs.config.infoText) fields.push({ name: 'Info', value: String(gs.config.infoText).slice(0, 1024) });
+
+            if (showPlayersList && gs.info?.players.length > 0) {
                 const pNames: string[] = [];
                 const pTimes: string[] = [];
                 const pScores: string[] = [];
                 const pPings: string[] = [];
 
                 for (const p of gs.info?.players) {
-                    if (pNames.join('\n').length > 1016 
-                    || pTimes.join('\n').length > 1016 
-                    || pScores.join('\n').length > 1016 
-                    || pPings.join('\n').length > 1016) {
+                    if (pNames.join('\n').length > 1016
+                        || pTimes.join('\n').length > 1016
+                        || pScores.join('\n').length > 1016
+                        || pPings.join('\n').length > 1016) {
                         if (pNames.length > 0) pNames.pop();
                         if (pTimes.length > 0) pTimes.pop();
                         if (pScores.length > 0) pScores.pop();
@@ -193,17 +208,18 @@ class ServerInfoMessage {
                     if (p.get('name') !== undefined) pNames.push(p.get('name') || 'n/a');
                     if (p.get('time') !== undefined) pTimes.push(hhmmss(p.get('time') || 0));
                     if (p.get('score') !== undefined) pScores.push(p.get('score') || '0');
+                    else if (p.get('frags') !== undefined) pScores.push(p.get('frags') || '0');
                     if (p.get('ping') !== undefined) pPings.push(String(p.get('ping') || 0) + ' ms');
                 }
 
-                if (pNames.length > 0) fields.push({ name: 'Name', value: '```\n' + pNames.join('\n').slice(0, 1016) + '\n```', inline: true});
-                if (pTimes.length > 0) fields.push({ name: 'Time', value: '```\n' + pTimes.join('\n').slice(0, 1016) + '\n```', inline: true});
-                if (pScores.length > 0) fields.push({ name: 'Score', value: '```\n' + pScores.join('\n').slice(0, 1016) + '\n```', inline: true});
-                if (pPings.length > 0) fields.push({ name: 'Ping', value: '```\n' + pPings.join('\n').slice(0, 1016) + '\n```', inline: true});
+                if (pNames.length > 0) fields.push({ name: 'Name', value: '```\n' + pNames.join('\n').slice(0, 1016) + '\n```', inline: true });
+                if (pTimes.length > 0) fields.push({ name: 'Time', value: '```\n' + pTimes.join('\n').slice(0, 1016) + '\n```', inline: true });
+                if (pScores.length > 0) fields.push({ name: 'Score', value: '```\n' + pScores.join('\n').slice(0, 1016) + '\n```', inline: true });
+                if (pPings.length > 0) fields.push({ name: 'Ping', value: '```\n' + pPings.join('\n').slice(0, 1016) + '\n```', inline: true });
             }
         } else {
             embed.setTitle(gs.niceName.slice(0, 245) + ' offline...');
-            embed.setColor('#ff0000');
+            embed.setColor(offlineColor as HexColorString);
         }
 
         embed.setFields(fields);

@@ -1,8 +1,9 @@
 {
   "name": "game-server-watcher",
-  "version": "2.2.0",
+  "version": "3.1.21",
   "description": "A simple discord/telegram/slack bot that can be hosted on a free service to monitor your game servers and players in style. 😎",
-  "main": "src/server",
+  "exports": "./dist/server.js",
+  "type": "module",
   "scripts": {
     "start": "node ./dist/server.js",
     "dev": "nodemon -e ts --exec \"npx tsc --incremental && node ./dist/server.js || exit 1\"",
@@ -23,29 +24,30 @@
   "author": "a-sync@devs.space",
   "license": "AGPL-3.0-or-later",
   "dependencies": {
-    "@commonify/lowdb": "^3.0.0",
-    "@slack/bolt": "^3.13.3",
-    "axios": "^1.4.0",
-    "discord.js": "^14.7.1",
-    "dotenv": "^16.0.3",
-    "gamedig": "^4.0.6",
-    "grammy": "^1.14.1",
-    "mustache": "^4.2.0"
+    "@slack/bolt": "^3.17.1",
+    "axios": "^1.6.5",
+    "discord.js": "^14.12.1",
+    "dotenv": "^16.3.2",
+    "gamedig": "^5.1.4",
+    "grammy": "^1.20.3",
+    "lowdb": "^6.1.1",
+    "mustache": "^4.2.0",
+    "neoip": "^3.0.1"
   },
   "devDependencies": {
-    "@types/gamedig": "^4.0.1",
-    "@types/node": "^16.9.0",
-    "eslint": "^8.34.0",
-    "nodemon": "^3.0.1",
-    "typescript": "^5.1.6"
+    "@types/gamedig": "^5.0.0",
+    "@types/node": "^16.18.73",
+    "eslint": "^8.56.0",
+    "nodemon": "^3.0.3",
+    "typescript": "^5.3.3"
   },
   "engines": {
-    "node": ">=16.9.0"
+    "node": ">=16.20.0"
   },
   "optionalDependencies": {
-    "bufferutil": "^4.0.7",
+    "bufferutil": "^4.0.8",
     "erlpack": "github:discord/erlpack",
-    "utf-8-validate": "^6.0.2",
-    "zlib-sync": "^0.1.8"
+    "utf-8-validate": "^6.0.3",
+    "zlib-sync": "^0.1.9"
   }
 }

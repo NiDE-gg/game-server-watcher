@@ -6,8 +6,8 @@ The main goals of this repo:
  1. create a (simple, but capable) service/bot to monitor game servers
     1. get gamedig & steam api server info (_eg.: server name, map, players, etc._)
     1. relay real time server information to various channels via APIs (_eg.: discord, telegram, slack etc._)
- 1. should be able to host on a free service (_target atm. is fly.io (node.js 18)_)
- 1. graciously add more features based on community feedback via [discord](https://discord.gg/4tsbftsGJz) and [github](https://github.com/a-sync/game-server-watcher/discussions/new?category=ideas-requests)
+ 1. should be able to host on a free service (_target atm. is fly.io (node.js 20)_)
+ 1. graciously add more features based on community feedback via [discord <img src="https://cdn.discordapp.com/icons/935911764023996527/1b791c9533f24a6bc23dbf5b2c134436.png?size=20" width="20" align="absmiddle" title="ACME Corp." alt="">](https://discord.gg/4tsbftsGJz) and [github :octocat:](https://github.com/a-sync/game-server-watcher/discussions/new?category=ideas-requests)
 
 # Screenshots
 <img src="https://user-images.githubusercontent.com/14183614/162092529-e1645b44-2650-4893-8123-7ba187b1f51c.png" height="520"> <img src="https://user-images.githubusercontent.com/14183614/162092488-f28bd60c-88bf-4b1e-a31e-d7dca51d8c28.png" height="520"> <img src="https://github.com/a-sync/game-server-watcher/assets/14183614/0461ad76-bb13-468c-a7b3-437d6a3cea63" height="520"> <img src="https://github.com/a-sync/game-server-watcher/assets/14183614/ee0ef0de-83bc-42ae-8f64-62f481f6ba8f" height="520"> 
@@ -15,13 +15,14 @@ The main goals of this repo:
 # Project Status
 The code itself is stable and continuously tested/deployed from the master branch.  
 
-The project is in a very early stage. More detailed customization options and features will be added as requested.  
+The project is in a mature stage. New customization options and features are added as requested.  
 
 ### Possible features and configuration options to add in the future
- * optional player list
-   * with configurable fields. eg.: time,name,ping,score
+ * ~~optional player list~~
+   * customizable fields (time, name, ping, score)
    * configurable field & order to sort by
    * max length for player names & nr of players
+ * ~~optional graph chart~~
  * custom embed fields for discord/slack
  * ~~configurable time zone offset for graph x-axis~~
  * refresh on reaction
@@ -40,7 +41,7 @@ The project is in a very early stage. More detailed customization options and fe
 These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. See [deployment](#deployment) for notes on how to deploy the project on a live system.  
 
 ## Requirements
-[node.js](https://nodejs.org/) _(version 16.9.0 or later)_  
+[node.js](https://nodejs.org/) _(version 16.20.0 or later)_  
 
 ## Getting the source
 This project is [hosted on github](https://github.com/a-sync/game-server-watcher). You can clone this project directly using this command:
@@ -75,7 +76,7 @@ npm run dev
 
 ## Settings
 The behaviour of the watcher service can be configured via environmental variables (env vars).  
-`.env` ([dotenv](https://www.npmjs.com/package/dotenv)) file is also supported, to look at the avaialable values and defaults check the [.env.example](./.env.example) file.  
+`.env` ([dotenv](https://www.npmjs.com/package/dotenv)) file is also supported, to look at the available values and defaults check the [.env.example](./.env.example) file.  
 To get started, you can simply rename the `.env.example` file to `.env`.  
 
 Refer to the wiki on how to acquire tokens for:
@@ -110,8 +111,10 @@ _The bot has no cleanup functionality, leftover messages must be removed manuall
 
 # Deployment
 Check the wiki page for detailed instructions on [how to setup a self deploying free cloud instance at fly.io](https://github.com/a-sync/game-server-watcher/wiki/Free-hosting-via-fly.io).  
-The latest Pterodactyl egg can always be found here: [🥚](https://raw.githubusercontent.com/a-sync/game-server-watcher/master/egg.json)
+The latest Pterodactyl egg can always be found here: [🥚](https://raw.githubusercontent.com/a-sync/game-server-watcher/master/egg.json)  
+Pre-built container images can be downloaded from the github container registry: `docker pull ghcr.io/a-sync/game-server-watcher`  
 <p align="center">
+  <!--<a href="https://app.koyeb.com/deploy?type=git&repository=github.com/a-sync/game-server-watcher&branch=master&name=gsw"><img src="https://www.koyeb.com/static/images/deploy/button.svg" height="32" alt="Deploy to Koyeb"></a>//TODO: support ephemeral storage-->
   <!--<a href="https://heroku.com/deploy?template=https%3A%2F%2Fgithub.com%2Fa-sync%2Fgame-server-watcher"><img src="https://www.herokucdn.com/deploy/button.svg" height="32" alt="Deploy to Heroku"></a>//TODO: support ephemeral storage-->
   <a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fa-sync%2Fgame-server-watcher%2Fmaster%2Fazuredeploy.json"><img src="https://aka.ms/deploytoazurebutton" height="32" alt="Deploy to Azure"></a>
   <a href="https://deploy.cloud.run?git_repo=https%3A%2F%2Fgithub.com%2Fa-sync%2Fgame-server-watcher"><img src="https://deploy.cloud.run/button.svg" height="32" alt="Run on Google Cloud"></a>
@@ -129,7 +132,7 @@ docker-compose up
 ## Hosting via NodeJS runtime
 Make sure all the [requirements](#requirements) are met!  
 
-### Build artifacts (optional)
+### Build artifacts
 ```
 npm i
 npm run build
@@ -162,7 +165,7 @@ node ./dist/server.js
 * Join the support / test [discord](https://discord.gg/4tsbftsGJz)
 
 # Further Reading
-* [gamedig supported games list](https://raw.githubusercontent.com/gamedig/node-gamedig/master/games.txt)
+* [gamedig supported games list](https://github.com/gamedig/node-gamedig/blob/master/GAMES_LIST.md)
 * [steamDB](https://steamdb.info/apps/)
 * [steam web API documentation](https://steamapi.xpaw.me/#IGameServersService/GetServerList)
 * [discord API v10 documentation](https://discord.js.org/#/docs/discord.js/14.7.1/class/EmbedBuilder)
@@ -174,21 +177,20 @@ node ./dist/server.js
 * [bootstrap 4 reference](https://www.w3schools.com/bootstrap4/bootstrap_ref_all_classes.asp)
 * [mustache documentation](https://github.com/janl/mustache.js#templates)
 * [pterodactyl documentation](https://pterodactyl.io/community/config/eggs/creating_a_custom_egg.html)
+    * [community docu fork](https://quintenqvd0.github.io/pterodactyl-documentation/docs/eggs/egg/)
 
 # Contributing
 Public contributions are welcome!  
 You can create a [new issue](https://github.com/a-sync/game-server-watcher/issues/new) for bugs, or feel free to open a [pull request](https://github.com/a-sync/game-server-watcher/pulls) for any and all your changes or work-in-progress features.
 
 # License
-This project is licensed under the AGPL License - see [LICENSE](./LICENSE) file for details.
+This project is licensed under the [AGPL License](./LICENSE.md) by default for public use. Businesses or organizations seeking a commercial license, please contact gsw@devs.space.
 
 # Authors
 Check the list of [contributors](https://github.com/a-sync/game-server-watcher/contributors) who participated in this project.
 
 # Acknowledgments
-This project was inpired by (the sudden disappearance of) "_Game Status#5371_" bot and its creator [Ramzi Saheb](https://github.com/Ramzi-Sah) on discord.  
-
-IP regex stolen from the [ip-regex](https://github.com/sindresorhus/ip-regex) package source.  
+This project was inspired by (the sudden disappearance of) "_Game Status#5371_" bot and its creator [Ramzi Saheb](https://github.com/Ramzi-Sah) on discord.  
 
 GSW icon stolen from _Marvel’s Voices: Indigenous Voices #1_ "_The Watcher_" by [Jeffrey Veregge](https://www.jeffreyveregge.com).  
 
@@ -201,10 +203,10 @@ All other libraries and dependencies are listed in the _package.json file (depen
 * https://github.com/Douile/discord-gamestatus
 * https://github.com/Ramzi-Sah/game-status-discordbot
 * https://github.com/Ramzi-Sah/game-status-discordbot-selfhosted  
-* https://github.com/msniveau/discord-statusbotv2
+* https://github.com/msniveau/discord-statusbot
 * https://github.com/kevinkjt2000/bowser
 * https://github.com/negrifelipe/ServerStatusBot
-* https://gitlab.com/lxndr-ab/gswatcher
+* https://gitlab.com/lxndr/gswatcher
 * https://github.com/Unity-Technologies/qstat
 * https://github.com/GiyoMoon/steam-server-query
 * https://github.com/Fabricio-191/valve-server-query
@@ -213,3 +215,5 @@ All other libraries and dependencies are listed in the _package.json file (depen
 * https://github.com/EndBug/game-tracker
 * https://github.com/fasko-web/discord-gameserver-bots
 * https://github.com/FlorianSW/discord-player-count-bot
+* https://github.com/Destarianon/FawxGameDigBot
+* https://github.com/patriksh/gameserver-bot
